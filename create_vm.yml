@@ -3,7 +3,7 @@
 - name: Create Virtual machine with public_id
   ec2:
     region: "{{region}}"
-    id: "{{host.hostname}}"
+    id: "{{host.hostname}}{{id_suffix}}"
     instance_type: "{{host.machine_size}}"
     # os_disk_size_gb: 16
     assign_public_ip: "{{host.public_ip|d('no')}}"
@@ -16,4 +16,5 @@
     image: "{{image}}"
     count: 1
     group: "{{host.sec_group}}"
+    wait: true
 

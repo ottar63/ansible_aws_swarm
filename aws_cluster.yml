@@ -7,6 +7,7 @@ cidr_sub: 10.10.1.0/24
 ext_group: App_group
 int_group: Int_group
 docker_user: ubuntu
+id_suffix: "-4"
 aws_hosts:
   awsmaster:
     manager: "True"
