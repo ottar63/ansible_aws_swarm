@@ -1,0 +1,19 @@
+---
+
+- name: Create Virtual machine with public_id
+  ec2:
+    region: "{{region}}"
+    id: "{{host.hostname}}"
+    instance_type: "{{host.machine_size}}"
+    # os_disk_size_gb: 16
+    assign_public_ip: "{{host.public_ip|d('no')}}"
+    instance_tags:
+      Name: "{{clustername}}"
+      Host: "{{host.hostname}}"
+    private_ip: "{{host.private_ip}}"
+    vpc_subnet_id: "{{subnet_internal.subnet.id}}"
+    key_name: ansible-key
+    image: "{{image}}"
+    count: 1
+    group: "{{host.sec_group}}"
+

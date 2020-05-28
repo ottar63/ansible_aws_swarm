@@ -1,0 +1,34 @@
+---
+region: us-west-2
+clustername: aws_docker
+image: ami-b9ff39d9
+cidr: 10.10.0.0/16
+cidr_sub: 10.10.1.0/24
+ext_group: App_group
+int_group: Int_group
+docker_user: ubuntu
+aws_hosts:
+  awsmaster:
+    manager: "True"
+    hostname: awsmaster
+    machine_size: t2.micro
+    private_ip: 10.10.1.6
+    public_ip: "yes"
+    sec_group: App_group
+  awsnode1:
+    workers: "True"
+    hostname: awsnode1
+    machine_size: t2.micro
+    private_ip: 10.10.1.7
+    manager: "False"
+    sec_group: Int_group
+  awsnode2:
+    workers: "True"
+    hostname: awsnode2
+    machine_size: t2.micro
+    private_ip: 10.10.1.8
+    manager: "False"
+    sec_group: Int_group
+
+virtualnet: virtualnet
+manager_host: awsmaster

@@ -1,0 +1,129 @@
+---
+- hosts: localhost
+  connection: local
+  vars:
+    pub_key: "{{lookup('file','~/.ssh/id_rsa.pub')}}"
+  vars_files:
+    - aws_cluster.yml
+  tasks:
+    - name: Get my Public IP
+      ipify_facts:
+
+
+    - name: Create Virtual network
+      ec2_vpc_net:
+        region: "{{region}}"
+        cidr_block: "{{cidr}}"
+        name: "{{virtualnet}}"
+      register: vpc
+
+    - name: Create Subnet
+      ec2_vpc_subnet:
+        region: "{{region}}"
+        vpc_id: "{{vpc.vpc.id}}"
+        cidr: "{{cidr_sub}}"
+      register: subnet_internal
+
+
+    - name: Create Internet Gateway
+      ec2_vpc_igw:
+        region: "{{region}}"
+        vpc_id: "{{vpc.vpc.id}}"
+      register: igw
+
+
+    - name: Create Internet access
+      ec2_vpc_route_table:
+        vpc_id: "{{vpc.vpc.id}}"
+        region: "{{region}}"
+        tags:
+          name: Public
+        subnets: 
+          - "{{subnet_internal.subnet.id}}"
+        routes:
+          - dest: 0.0.0.0/0
+            gateway_id: "{{igw.gateway_id}}"
+        
+    - name: Create security group for external
+      ec2_group:
+        name: "{{ext_group}}"
+        description: "Security group for Demo Voting app"
+        region: "{{region}}"
+        vpc_id: "{{vpc.vpc.id}}"
+        rules:
+          - proto: tcp
+            from_port: 22
+            to_port: 22
+            cidr_ip: "{{ipify_public_ip}}/32"
+            #cidr_ip: 0.0.0.0/0
+          - proto: tcp
+            from_port: 5000
+            to_port: 5000
+            cidr_ip: 0.0.0.0/0
+          - proto: tcp
+            from_port: 5001
+            to_port: 5001
+            cidr_ip: 0.0.0.0/0
+          - proto: tcp
+            from_port: 8080
+            to_port: 8080
+            cidr_ip: 0.0.0.0/0
+      register: sec_group
+
+    - name: Create security group internal
+      ec2_group:
+        name: "{{int_group}}"
+        description: "Security group internal"
+        region: "{{region}}"
+        vpc_id: "{{vpc.vpc.id}}"
+        rules:
+          - proto: tcp
+            from_port: 22
+            to_port: 22
+            cidr_ip: 0.0.0.0/0
+
+    - name: Creat ssh key
+      ec2_key:
+        region: "{{region}}"
+        name: ansible-key
+        key_material: "{{pub_key}}"
+
+
+    - include_tasks: create_vm.yml
+      vars:
+        host: "{{aws_hosts[item]}}"
+      with_items: "{{aws_hosts}}"
+
+    - name: Get ec2 facts for manager
+      ec2_instance_info:
+        filters:
+            "tag:Host": "{{manager_host}}"
+            "instance-state-name": running
+      register: master_facts
+
+    - name: Debug ec2 facts
+      debug:
+        msg: "{{master_facts}}"
+
+    - name: Set fact for public IP
+      set_fact:
+        public_ip: "{{master_facts.instances[0].public_ip_address}}"
+
+    - name: Create/update ssh config
+      blockinfile:
+        path: ~/.ssh/config
+        create: "yes"
+        block: |
+          StrictHostKeyChecking no
+          Host    "{{aws_hosts[item].hostname}}"
+          ProxyCommand ssh -W "{{aws_hosts[item].private_ip}}":%p "{{docker_user}}@{{public_ip}}"
+          UserKnownHostsFile /dev/null
+        marker: "#  {mark} hostname: {{aws_hosts[item].hostname}}  "
+      with_items: "{{aws_hosts}}"
+
+    - name: Create host file
+      lineinfile:
+        create: yes
+        path: ./hosts
+        line: "{{aws_hosts[item].hostname}}"
+      with_items: "{{aws_hosts}}"
