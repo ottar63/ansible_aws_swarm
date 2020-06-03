@@ -17,33 +17,61 @@
         name: "{{virtualnet}}"
       register: vpc
 
-    - name: Create Subnet
+    - name: Get az info for region
+      aws_az_info:
+        region: "{{region}}"
+      register: az_info
+
+    - name: Debug az info
+      debug:
+        msg: "{{az_info}}"
+
+    - name: Create Public Subnet
       ec2_vpc_subnet:
         region: "{{region}}"
         vpc_id: "{{vpc.vpc.id}}"
-        cidr: "{{cidr_sub}}"
-      register: subnet_internal
+        az: "{{az_info.availability_zones[0].zone_name}}"
+        cidr: "{{pub_cidr}}"
+      register: public_subnet
 
+    - name: Debug public subnet
+      debug:
+        msg: "{{public_subnet}}"
 
+    - name: Set subnet_id for public subnet
+      set_fact:
+        pub_id: "{{public_subnet.subnet.id}}"
+  
+    - name: Create Private Subnet
+      ec2_vpc_subnet:
+        region: "{{region}}"
+        vpc_id: "{{vpc.vpc.id}}"
+        az: "{{az_info.availability_zones[1].zone_name}}"
+        cidr: "{{priv_cidr}}"
+      register: private_subnet
+
+    - name: Set subnet_id for private subnet
+      set_fact:
+        priv_id: "{{private_subnet.subnet.id}}"
+  
     - name: Create Internet Gateway
       ec2_vpc_igw:
         region: "{{region}}"
         vpc_id: "{{vpc.vpc.id}}"
       register: igw
 
-
-    - name: Create Internet access
-      ec2_vpc_route_table:
-        vpc_id: "{{vpc.vpc.id}}"
+    - name: Create NAT gateway for private subnet
+      ec2_vpc_nat_gateway:
         region: "{{region}}"
-        tags:
-          name: Public
-        subnets: 
-          - "{{subnet_internal.subnet.id}}"
-        routes:
-          - dest: 0.0.0.0/0
-            gateway_id: "{{igw.gateway_id}}"
-        
+        if_exist_do_not_create: yes
+        subnet_id: "{{pub_id}}"
+        wait: yes
+      register: nat_gw
+
+    - name: Debug Nat GW
+      debug:
+        msg: "{{nat_gw}}"
+
     - name: Create security group for external
       ec2_group:
         name: "{{ext_group}}"
@@ -55,7 +83,6 @@
             from_port: 22
             to_port: 22
             cidr_ip: "{{ipify_public_ip}}/32"
-            #cidr_ip: 0.0.0.0/0
           - proto: tcp
             from_port: 5000
             to_port: 5000
@@ -68,6 +95,23 @@
             from_port: 8080
             to_port: 8080
             cidr_ip: 0.0.0.0/0
+          # ports for docker swarm
+          - proto: tcp
+            from_port: 2377
+            to_port: 2377
+            cidr_ip: 10.10.0.0/16
+          - proto: tcp
+            from_port: 7946
+            to_port: 7946
+            cidr_ip: 10.10.0.0/16
+          - proto: udp
+            from_port: 7946
+            to_port: 7946
+            cidr_ip: 10.10.0.0/16
+          - proto: udp
+            from_port: 4789
+            to_port: 4789
+            cidr_ip: 10.10.0.0/16
       register: sec_group
 
     - name: Create security group internal
@@ -81,6 +125,23 @@
             from_port: 22
             to_port: 22
             cidr_ip: 0.0.0.0/0
+          # Ports for Docker Swarm
+          - proto: tcp
+            from_port: 2377
+            to_port: 2377
+            cidr_ip: 10.10.0.0/16
+          - proto: tcp
+            from_port: 7946
+            to_port: 7946
+            cidr_ip: 10.10.0.0/16
+          - proto: udp
+            from_port: 7946
+            to_port: 7946
+            cidr_ip: 10.10.0.0/16
+          - proto: udp
+            from_port: 4789
+            to_port: 4789
+            cidr_ip: 10.10.0.0/16
 
     - name: Creat ssh key
       ec2_key:
@@ -89,16 +150,44 @@
         key_material: "{{pub_key}}"
 
 
+    - name: Create Routing Table for Public subnet
+      ec2_vpc_route_table:
+        vpc_id: "{{vpc.vpc.id}}"
+        region: "{{region}}"
+        tags:
+          name: Public
+        subnets: 
+          - "{{pub_id}}"
+        routes:
+          - dest: 0.0.0.0/0
+            gateway_id: "{{igw.gateway_id}}"
+            # instance_id: "{{gw_id}}"
+        
+    - name: Create Roting Table for Private subnet
+      ec2_vpc_route_table:
+        vpc_id: "{{vpc.vpc.id}}"
+        region: "{{region}}"
+        tags:
+          name: Private
+        subnets:
+          - "{{priv_id}}"
+        routes: 
+          - dest: 0.0.0.0/0
+            gateway_id: "{{nat_gw.nat_gateway_id}}"
     - include_tasks: create_vm.yml
       vars:
         host: "{{aws_hosts[item]}}"
       with_items: "{{aws_hosts}}"
 
+    - name: Debug hostvars
+      debug:
+        msg: "{{gw_id}}"
+
     - name: Get ec2 facts for manager
       ec2_instance_info:
         filters:
-            "tag:Host": "{{manager_host}}"
-            "instance-state-name": running
+          "tag:Host": "{{manager_host}}"
+          "instance-state-name": running
       register: master_facts
 
     - name: Debug ec2 facts
@@ -123,7 +212,7 @@
 
     - name: Create host file
       lineinfile:
-        create: yes
+        create: "yes"
         path: ./hosts
         line: "{{aws_hosts[item].hostname}}"
       with_items: "{{aws_hosts}}"

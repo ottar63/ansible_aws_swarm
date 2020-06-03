@@ -1,5 +1,19 @@
 ---
 
+- name: Set facts for subnet public
+  set_fact: 
+    subnet_id: "{{pub_id}}"
+  when: host.subnet == 'pub_sub'
+
+- name: Set facts for subnet private
+  set_fact: 
+    subnet_id: "{{priv_id}}"
+  when: host.subnet == 'priv_sub'
+
+- name: Debug subnet_id
+  debug: 
+    msg: "Subnet id :{{subnet_id}}"
+
 - name: Create Virtual machine with public_id
   ec2:
     region: "{{region}}"
@@ -11,10 +25,19 @@
       Name: "{{clustername}}"
       Host: "{{host.hostname}}"
     private_ip: "{{host.private_ip}}"
-    vpc_subnet_id: "{{subnet_internal.subnet.id}}"
+    vpc_subnet_id: "{{subnet_id}}"
     key_name: ansible-key
     image: "{{image}}"
     count: 1
     group: "{{host.sec_group}}"
     wait: true
+  register: instance
 
+- name: Set gateway to instance with public ip
+  set_fact:
+    gw_id: "{{instance.instances[0].id}}"
+  when: host.public_ip|d('no') == 'yes'
+
+- name: Debug gw_id
+  debug:
+    msg: "{{gw_id}}"
