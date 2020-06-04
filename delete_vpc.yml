@@ -1,0 +1,145 @@
+---
+- name: View AWS machines
+  hosts: localhost
+  connection: local
+  gather_facts: False
+  vars_files:
+    - aws_cluster.yml
+  tasks:
+    - name: Get vpc_net facts
+      ec2_vpc_net_info:
+        region: "{{region}}"
+        filters:
+          "tag:Name": "{{virtualnet}}"
+      register: vpc_info
+
+    - name: Debug vpc_info
+      debug:
+        msg: "{{vpc_info}}"
+ 
+    - name: Set vpc-id
+      set_fact:
+        vpc_id="{{vpc_info.vpcs[0].vpc_id}}"
+          
+        
+    - name: debug vpc_id
+      debug:
+        msg: "{{vpc_id}}"
+
+    - ec2_instance_facts:
+        region: "{{region}}"
+        filters:
+          "instance-state-name": running
+          "tag:Name": "{{clustername}}"
+      register: instance_list
+    - debug: var=instance_list
+
+    - set_fact:
+        instance_ids="{{instance_list.instances|map(attribute='instance_id')|list}}"
+    - debug: 
+        msg: "{{instance_ids}}"
+
+    - ec2:
+        region: us-west-2
+        instance_ids: "{{instance_ids}}"
+        state: absent
+      when: instance_ids|length > 0 
+
+    - name: Get NAT gateways
+      ec2_vpc_nat_gateway_info:
+        region: "{{region}}"
+        filters:
+          state: 'available'
+      register: nat_gws
+
+    - name: Set facts for NAT gateways
+      set_fact:
+          nat_gw_ids="{{nat_gws.result|map(attribute='nat_gateway_id')|list}}"
+
+    - name: Delete NAT gateways
+      ec2_vpc_nat_gateway:
+        nat_gateway_id: "{{item}}"
+        state: absent
+        release_eip: yes
+        wait: yes
+      with_items: "{{nat_gw_ids}}"
+
+    - name: Get subnets
+      ec2_vpc_subnet_info:
+        region: "{{region}}"
+      register: vpc_subnet_info
+
+    - name: Set fatcs for subnet
+      set_fact:
+        subnet_ids="{{vpc_subnet_info.subnets|map(attribute='subnet_id')|list}}"
+    
+    - name: Delete VPC subnet
+      ec2_vpc_subnet:
+        region: "{{region}}"
+        vpc_id: "{{item.vpc_id}}"
+        cidr: "{{item.cidr_block}}"
+        state: absent
+      with_items: "{{vpc_subnet_info.subnets}}"
+
+    - name: Get igw info
+      ec2_vpc_igw_info:
+        region: "{{region}}"
+      register: igw_info
+
+    - name: Debug IGW
+      debug:
+        msg: "{{igw_info}}"
+        
+    - name: Delete IGW
+      ec2_vpc_igw:
+        vpc_id: "{{item.attachments[0].vpc_id}}"
+        state: absent
+      with_items: "{{igw_info.internet_gateways}}"
+        
+    - name: Get Security group facts
+      ec2_group_info:
+        region: "{{region}}"
+        filters:
+          vpc-id: "{{vpc_id}}"
+          group_name:  '*group'
+      register: vpc_groups
+    
+    - name: Debug group
+      debug:
+        msg: "{{vpc_groups}}"
+      
+    - name: Delete security groups
+      ec2_group:
+        region: "{{region}}"
+        group_id: "{{item.group_id}}"
+        state: absent
+      with_items: "{{vpc_groups.security_groups}}"
+
+    - name: Get Route Table Facts
+      ec2_vpc_route_table_info:
+        region: "{{region}}"
+      register: route_tables
+    
+    - name: Debug Route Tables
+      debug:
+        msg: "{{route_tables}}"
+
+    - name: Debug Route Tables
+      debug:
+        msg: "{{item.associations}}"
+      with_items: "{{route_tables.route_tables}}"
+
+    - name: delete route tables except main route
+      ec2_vpc_route_table:
+        lookup: id
+        route_table_id: "{{item.id}}"
+        state: absent
+      with_items: "{{route_tables.route_tables}}"
+      when: item.associations|length == 0 
+        
+    - name: Delete VPC
+      ec2_vpc_net:
+        name: "{{virtualnet}}"
+        cidr_block: "{{cidr}}"
+        state: absent 
+        purge_cidrs: yes
