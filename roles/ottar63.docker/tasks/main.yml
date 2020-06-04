@@ -1,0 +1,80 @@
+---
+# tasks file for ottar63.docker
+- name: Install prereq
+  apt:
+    pkg:
+      - apt-transport-https
+      - software-properties-common
+      - ca-certificates
+      - python-pip
+    update-cache: "yes"
+    install_recommends: no
+- name: Add Docker PGP Repo key
+  apt_key:
+    url: https://download.docker.com/linux/ubuntu/gpg
+    state: present
+
+- name: Add Docker Repo
+  apt_repository:
+    repo: deb https://download.docker.com/linux/ubuntu bionic stable
+    update_cache: "yes"
+
+- name: Install docker
+  apt:
+    pkg:
+      - docker-ce
+      - docker-ce-cli
+      - containerd.io
+    install_recommends: no
+
+- name: Add user to docker group
+  user:
+    name: "{{docker_user}}"
+    append: "True"
+    groups:
+      - docker
+- name: Debug Manager_host
+  debug:
+    msg: "This: {{manager_host}} ansible {{ansible_hostname}} inventory {{inventory_hostname}}"
+- name: Debug Hostvars
+  debug:
+    msg: "{{hostvars[inventory_hostname]}}"
+
+- name: Create ssh keys on node master
+  become_user: "{{docker_user}}"
+  openssh_keypair:
+    path: ./.ssh/id_rsa
+    owner: "{{docker_user}}"
+  register: ssh_key
+  when: inventory_hostname == manager_host
+  #with_items: "{{azure_hosts}}"
+  #when: item.manager|d(False) == True and item.hostname == ansible_host
+
+- name: Debug ssh key
+  debug:
+    msg: "{{hostvars[manager_host].ssh_key}}"
+
+- name: add keys to nodes
+  authorized_key:
+    user: "{{docker_user}}"
+    state: present
+    key: "{{hostvars[manager_host].ssh_key.public_key}}"
+  when: inventory_hostname != manager_host
+  register: auth_key
+
+- name: ignore known_host
+  copy:
+    dest: /home/{{docker_user}}/.ssh/config
+    content: |
+        Host aznode1
+          StrictHostKeyChecking no
+          UserKnownHostsFile=/dev/null
+        Host aznode2
+          StrictHostKeyChecking no
+          UserKnownHostsFile=/dev/null
+    owner: "{{docker_user}}"
+
+- name: Start docker
+  service:
+    name: docker
+    state: started

@@ -1,0 +1,8 @@
+---
+- hosts: all
+  vars_files:
+  - aws_cluster.yml
+  become: true
+  remote_user: ubuntu
+  roles:
+    - ottar63.docker
