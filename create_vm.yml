@@ -10,16 +10,11 @@
     subnet_id: "{{priv_id}}"
   when: host.subnet == 'priv_sub'
 
-- name: Debug subnet_id
-  debug: 
-    msg: "Subnet id :{{subnet_id}}"
-
 - name: Create Virtual machine with public_id
   ec2:
     region: "{{region}}"
     id: "{{host.hostname}}{{id_suffix}}"
     instance_type: "{{host.machine_size}}"
-    # os_disk_size_gb: 16
     assign_public_ip: "{{host.public_ip|d('no')}}"
     instance_tags:
       Name: "{{clustername}}"
@@ -33,11 +28,3 @@
     wait: true
   register: instance
 
-- name: Set gateway to instance with public ip
-  set_fact:
-    gw_id: "{{instance.instances[0].id}}"
-  when: host.public_ip|d('no') == 'yes'
-
-- name: Debug gw_id
-  debug:
-    msg: "{{gw_id}}"

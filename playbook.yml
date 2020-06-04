@@ -22,10 +22,6 @@
         region: "{{region}}"
       register: az_info
 
-    - name: Debug az info
-      debug:
-        msg: "{{az_info}}"
-
     - name: Create Public Subnet
       ec2_vpc_subnet:
         region: "{{region}}"
@@ -33,10 +29,6 @@
         az: "{{az_info.availability_zones[0].zone_name}}"
         cidr: "{{pub_cidr}}"
       register: public_subnet
-
-    - name: Debug public subnet
-      debug:
-        msg: "{{public_subnet}}"
 
     - name: Set subnet_id for public subnet
       set_fact:
@@ -67,10 +59,6 @@
         subnet_id: "{{pub_id}}"
         wait: yes
       register: nat_gw
-
-    - name: Debug Nat GW
-      debug:
-        msg: "{{nat_gw}}"
 
     - name: Create security group for external
       ec2_group:
@@ -161,7 +149,6 @@
         routes:
           - dest: 0.0.0.0/0
             gateway_id: "{{igw.gateway_id}}"
-            # instance_id: "{{gw_id}}"
         
     - name: Create Roting Table for Private subnet
       ec2_vpc_route_table:
@@ -179,20 +166,12 @@
         host: "{{aws_hosts[item]}}"
       with_items: "{{aws_hosts}}"
 
-    - name: Debug hostvars
-      debug:
-        msg: "{{gw_id}}"
-
     - name: Get ec2 facts for manager
       ec2_instance_info:
         filters:
           "tag:Host": "{{manager_host}}"
           "instance-state-name": running
       register: master_facts
-
-    - name: Debug ec2 facts
-      debug:
-        msg: "{{master_facts}}"
 
     - name: Set fact for public IP
       set_fact:
