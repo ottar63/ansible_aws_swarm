@@ -1,14 +1,14 @@
 ---
 region: us-west-2
 clustername: aws_docker
-image: ami-b9ff39d9
+image: ami-003634241a8fcdec0
 cidr: 10.10.0.0/16
 pub_cidr: 10.10.1.0/24
 priv_cidr: 10.10.2.0/24
 ext_group: App_group
 int_group: Int_group
 docker_user: ubuntu
-id_suffix: "E"
+id_suffix: "I"
 virtualnet: virtualnet
 manager_host: awsmaster
 
