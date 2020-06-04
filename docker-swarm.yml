@@ -1,0 +1,45 @@
+---
+- hosts: all
+  vars_files:
+  - aws_cluster.yml
+  become: true
+  remote_user: ubuntu
+  tasks:
+    - name: Install Python tools
+      apt:
+        name:
+          - python-setuptools
+          - python-pip
+        state: present
+
+    - name: install  docker python library
+      pip:
+        name:
+          - docker-py
+          - jsondiff
+          - pyyaml
+
+    - name: Set Broadcast IP
+      set_fact:
+        broadcast_ip: "{{aws_hosts[inventory_hostname].private_ip}}"
+      when: inventory_hostname == manager_host
+
+    - name: Start docker swarm on master
+      docker_swarm:
+        advertise_addr: "{{broadcast_ip}}"
+        state: present
+      register: swarm_out
+      when: inventory_hostname == manager_host
+
+    - name: Set join Toke
+      set_fact:
+        join_token: "{{swarm_out.swarm_facts.JoinTokens.Worker}}"
+      when: inventory_hostname == manager_host
+
+    - name: Join nodes to swarm
+      docker_swarm:
+        state: join
+        remote_addrs: "{{hostvars[manager_host].broadcast_ip}}"
+        join_token: "{{hostvars[manager_host].join_token}}"
+        advertise_addr: "{{aws_hosts[inventory_hostname].private_ip}}"
+      when: aws_hosts[inventory_hostname].hostname != manager_host

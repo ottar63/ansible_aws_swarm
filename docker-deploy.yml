@@ -1,0 +1,28 @@
+---
+- hosts: all
+  vars_files:
+  - aws_cluster.yml
+  remote_user: ubuntu
+  tasks:
+    - name: Copy vote.yml
+      template:
+        src: ./files/vote.yml
+        dest: vote.yml
+      when: inventory_hostname == manager_host
+
+    - name:  Create directory for postgresql database
+      become: true
+      file:
+        path: /data/postgresql/data
+        state: directory
+        mode: 0777
+      when: inventory_hostname == manager_host
+
+    - name:  Deploy demo service
+      docker_stack:
+        compose:
+          - ./vote.yml
+        state: present
+        name:  vote
+      when: inventory_hostname == manager_host
+
