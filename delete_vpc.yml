@@ -13,34 +13,26 @@
           "tag:Name": "{{virtualnet}}"
       register: vpc_info
 
-    - name: Debug vpc_info
-      debug:
-        msg: "{{vpc_info}}"
- 
     - name: Set vpc-id
       set_fact:
         vpc_id="{{vpc_info.vpcs[0].vpc_id}}"
           
-        
-    - name: debug vpc_id
-      debug:
-        msg: "{{vpc_id}}"
-
-    - ec2_instance_facts:
+    - name: Get EC2 instances
+      ec2_instance_info:
         region: "{{region}}"
         filters:
-          "instance-state-name": running
+          instance-state-name: running
           "tag:Name": "{{clustername}}"
+          vpc-id: "{{vpc_id}}"
       register: instance_list
-    - debug: var=instance_list
 
-    - set_fact:
+    - name: Set instance_ids to delete
+      set_fact:
         instance_ids="{{instance_list.instances|map(attribute='instance_id')|list}}"
-    - debug: 
-        msg: "{{instance_ids}}"
 
-    - ec2:
-        region: us-west-2
+    - name: Delete running EC2 instances
+      ec2:
+        region: "{{region}}"
         instance_ids: "{{instance_ids}}"
         state: absent
       when: instance_ids|length > 0 
@@ -50,23 +42,22 @@
         region: "{{region}}"
         filters:
           state: 'available'
-      register: nat_gws
-
-    - name: Set facts for NAT gateways
-      set_fact:
-          nat_gw_ids="{{nat_gws.result|map(attribute='nat_gateway_id')|list}}"
-
+          vpc-id: "{{vpc_id}}"
+      register: nat_gw_ids
+  
     - name: Delete NAT gateways
       ec2_vpc_nat_gateway:
-        nat_gateway_id: "{{item}}"
+        nat_gateway_id: "{{item.nat_gateway_id}}"
         state: absent
         release_eip: yes
         wait: yes
-      with_items: "{{nat_gw_ids}}"
+      with_items: "{{nat_gw_ids.result}}"
 
     - name: Get subnets
       ec2_vpc_subnet_info:
         region: "{{region}}"
+        filters:
+          vpc-id: "{{vpc_id}}"
       register: vpc_subnet_info
 
     - name: Set fatcs for subnet
@@ -84,12 +75,10 @@
     - name: Get igw info
       ec2_vpc_igw_info:
         region: "{{region}}"
+        filters: 
+           attachment.vpc-id: "{{vpc_id}}" 
       register: igw_info
 
-    - name: Debug IGW
-      debug:
-        msg: "{{igw_info}}"
-        
     - name: Delete IGW
       ec2_vpc_igw:
         vpc_id: "{{item.attachments[0].vpc_id}}"
@@ -104,10 +93,6 @@
           group_name:  '*group'
       register: vpc_groups
     
-    - name: Debug group
-      debug:
-        msg: "{{vpc_groups}}"
-      
     - name: Delete security groups
       ec2_group:
         region: "{{region}}"
@@ -118,16 +103,13 @@
     - name: Get Route Table Facts
       ec2_vpc_route_table_info:
         region: "{{region}}"
+        filters: 
+          vpc-id: "{{vpc_id}}"
       register: route_tables
     
-    - name: Debug Route Tables
+    - name: Debug route tables
       debug:
         msg: "{{route_tables}}"
-
-    - name: Debug Route Tables
-      debug:
-        msg: "{{item.associations}}"
-      with_items: "{{route_tables.route_tables}}"
 
     - name: delete route tables except main route
       ec2_vpc_route_table:
@@ -135,7 +117,7 @@
         route_table_id: "{{item.id}}"
         state: absent
       with_items: "{{route_tables.route_tables}}"
-      when: item.associations|length == 0 
+      when: item.associations|length == 0 or item.associations[0].main != true
         
     - name: Delete VPC
       ec2_vpc_net:
